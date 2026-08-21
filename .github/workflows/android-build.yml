@@ -24,18 +24,32 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      # This project's build.gradle.kts files don't ship a Gradle wrapper,
-      # so we install the exact Gradle version AGP 9.1.0 needs and put it on PATH.
       - name: Set up Gradle 9.1.0
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.1.0'
           cache-read-only: false
 
+      # The Android project (settings.gradle.kts, app/, etc.) might not be at
+      # the repo root - it may be nested one or two folders deep depending on
+      # how the zip was uploaded. Find it automatically instead of guessing.
+      - name: Locate Android project root
+        run: |
+          SETTINGS_FILE=$(find "$GITHUB_WORKSPACE" -maxdepth 4 -name "settings.gradle.kts" | head -n 1)
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "Could not find settings.gradle.kts anywhere in the repo!"
+            find "$GITHUB_WORKSPACE" -maxdepth 3
+            exit 1
+          fi
+          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
+          echo "Found Android project at: $PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
       # app/build.gradle.kts points the "debug" signing config at
       # ${rootDir}/debug.keystore with alias "androiddebugkey" / password "android".
       # That file is gitignored, so it has to be generated before the build runs.
       - name: Generate debug keystore
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           keytool -genkeypair -v \
             -keystore debug.keystore \
@@ -49,13 +63,15 @@ jobs:
       # it gets baked into BuildConfig.GEMINI_API_KEY. Without it, the app
       # still compiles fine (it just falls back to the .env.example placeholder).
       - name: Create .env file
+        working-directory: ${{ env.PROJECT_DIR }}
         run: echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
 
       - name: Build debug APK
+        working-directory: ${{ env.PROJECT_DIR }}
         run: gradle assembleDebug --stacktrace
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: puckvoice-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
