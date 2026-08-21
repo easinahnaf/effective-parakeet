@@ -25,11 +25,11 @@ jobs:
         uses: android-actions/setup-android@v3
 
       # This project's build.gradle.kts files don't ship a Gradle wrapper,
-      # so we install the exact Gradle version AGP 9.1.1 needs and put it on PATH.
-      - name: Set up Gradle 9.1.1
+      # so we install the exact Gradle version AGP 9.1.0 needs and put it on PATH.
+      - name: Set up Gradle 9.1.0
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '9.1.1'
+          gradle-version: '9.1.0'
           cache-read-only: false
 
       # app/build.gradle.kts points the "debug" signing config at
