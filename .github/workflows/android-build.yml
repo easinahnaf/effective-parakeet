@@ -7,6 +7,9 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -14,6 +17,33 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Extract project if it's still zipped
+        run: |
+          ZIP_FILE=$(find "$GITHUB_WORKSPACE" -maxdepth 2 -iname "*.zip" | head -n 1)
+          if [ -n "$ZIP_FILE" ]; then
+            echo "Found zip file: $ZIP_FILE - extracting..."
+            unzip -o -q "$ZIP_FILE" -d "$GITHUB_WORKSPACE"
+          else
+            echo "No zip file found - assuming the project is already extracted."
+          fi
+
+      - name: Commit extracted files back to the repo
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          ZIP_FILE=$(find . -maxdepth 2 -iname "*.zip" | head -n 1)
+          if [ -n "$ZIP_FILE" ]; then
+            rm -f "$ZIP_FILE"
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nothing new to commit."
+          else
+            git commit -m "Auto-extract zipped Android project [skip ci]"
+            git push
+          fi
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -30,9 +60,6 @@ jobs:
           gradle-version: '9.1.0'
           cache-read-only: false
 
-      # The Android project (settings.gradle.kts, app/, etc.) might not be at
-      # the repo root - it may be nested one or two folders deep depending on
-      # how the zip was uploaded. Find it automatically instead of guessing.
       - name: Locate Android project root
         run: |
           SETTINGS_FILE=$(find "$GITHUB_WORKSPACE" -maxdepth 4 -name "settings.gradle.kts" | head -n 1)
@@ -45,9 +72,6 @@ jobs:
           echo "Found Android project at: $PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      # app/build.gradle.kts points the "debug" signing config at
-      # ${rootDir}/debug.keystore with alias "androiddebugkey" / password "android".
-      # That file is gitignored, so it has to be generated before the build runs.
       - name: Generate debug keystore
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
@@ -59,9 +83,6 @@ jobs:
             -keyalg RSA -keysize 2048 -validity 10000 \
             -dname "CN=Android Debug,O=Android,C=US"
 
-      # Optional: if you add a GEMINI_API_KEY secret in the repo settings,
-      # it gets baked into BuildConfig.GEMINI_API_KEY. Without it, the app
-      # still compiles fine (it just falls back to the .env.example placeholder).
       - name: Create .env file
         working-directory: ${{ env.PROJECT_DIR }}
         run: echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
